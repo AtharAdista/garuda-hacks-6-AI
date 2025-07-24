@@ -55,6 +55,7 @@ jobs:
           env_vars: |
             NODE_ENV=production
             DATABASE_URL=${{ secrets.DATABASE_URL }}
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
 
       - name: Ensure unauthenticated access
         run: |
