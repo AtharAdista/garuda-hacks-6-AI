@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from controllers.scrape_controller import scrape_router
-from routers.competitor_router import competitor_router
-from routers.game_router import game_router
+from controllers.competitor_controller import competitor_router
+from controllers.game_controller import game_router
 import uvicorn
 
 app = FastAPI(
