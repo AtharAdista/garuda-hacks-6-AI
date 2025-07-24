@@ -11,6 +11,7 @@ langchain
 langchain-core
 langchain-google-genai
 google-generativeai
+google-api-python-client
 
 # Utilities
 requests
