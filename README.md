@@ -1,1 +1,1 @@
-"# garuda-hacks-6-AI" 
+# Culturate AI API
