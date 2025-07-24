@@ -39,6 +39,15 @@ class ScrapeService(BaseLangChainService):
             "wayang puppet", "batik pattern",
             "traditional musical instrument",
         ]
+        self.video_cultural_categories = [
+            "traditional dance", "traditional music", "wayang puppet",
+            "cultural festival", "traditional ceremony"
+        ]
+        
+        self.media_probabilities = {
+            "image": 0.6,
+            "video": 0.4
+        }
 
     def generate_cultural_query(self, province: str, cultural_category: str) -> str:
         
@@ -65,6 +74,99 @@ class ScrapeService(BaseLangChainService):
         except Exception as e:
             logger.error(f"Error generating query: {e}")
             return f"{cultural_category} {province}".replace("traditional ", "")
+
+    def choose_media_type(self) -> str:
+        rand_val = random.random()
+        if rand_val < self.media_probabilities["image"]:
+            return "image"
+        else:
+            return "video"
+
+    def search_youtube_videos(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        try:
+            if not self.youtube_client:
+                logger.error("YouTube client not initialized")
+                return []
+                
+            logger.info(f"Searching YouTube for videos: {query}")
+            
+            search_response = self.youtube_client.search().list(
+                q=query,
+                part='id,snippet',
+                type='video',
+                maxResults=max_results,
+                order='relevance',
+                regionCode='ID', 
+                relevanceLanguage='id' 
+            ).execute()
+            
+            videos = []
+            for search_result in search_response.get('items', []):
+                video_data = {
+                    'video_id': search_result['id']['videoId'],
+                    'title': search_result['snippet']['title'],
+                    'description': search_result['snippet']['description'],
+                    'channel_title': search_result['snippet']['channelTitle'],
+                    'published_at': search_result['snippet']['publishedAt'],
+                    'thumbnail_url': search_result['snippet']['thumbnails']['high']['url'],
+                    'video_url': f"https://www.youtube.com/watch?v={search_result['id']['videoId']}"
+                }
+                videos.append(video_data)
+                logger.info(f"Found video: {video_data['title']}")
+            
+            logger.info(f"Found {len(videos)} videos for query: {query}")
+            return videos
+            
+        except Exception as e:
+            logger.error(f"Error searching YouTube videos: {e}")
+            return []
+
+    def validate_video_cultural_accuracy(self, video_data: Dict[str, Any], province: str, cultural_category: str, query: str) -> float:
+        try:
+            validation_prompt = f"""Analyze this video information to determine if it accurately represents {cultural_category} from {province} province in Indonesia.
+
+                Video details:
+                - Title: {video_data['title']}
+                - Description: {video_data['description'][:500]}...
+                - Channel: {video_data['channel_title']}
+
+                Search query used: "{query}"
+                Target province: {province}
+                Cultural category: {cultural_category}
+
+                Please evaluate:
+                1. Does the video appear to show authentic Indonesian cultural content?
+                2. Is it specifically related to {province} province?
+                3. Does it match the cultural category "{cultural_category}"?
+                4. Is the content quality and authenticity appropriate?
+
+                Return ONLY a confidence score between 0.0 and 1.0 as a number (e.g., 0.85)."""
+            
+            response = self.text_llm.invoke([HumanMessage(content=validation_prompt)])
+            response_text = response.content.strip()
+            
+            import re
+            score_match = re.search(r'(\d+\.?\d*)', response_text)
+            if score_match:
+                confidence_score = float(score_match.group(1))
+                if confidence_score > 1.0:
+                    confidence_score = 0
+                confidence_score = max(0.0, min(1.0, confidence_score))
+            else:
+                logger.warning(f"Could not extract confidence score from: {response_text}")
+                confidence_score = 0.0
+            
+            logger.info(f"AI validation confidence for video {video_data['title']}: {confidence_score}")
+            return confidence_score
+                    
+        except Exception as e:
+            logger.error(f"Error in video cultural validation: {e}")
+            title_desc = f"{video_data.get('title', '')} {video_data.get('description', '')}".lower()
+            specific_terms = ['tari', 'dance', 'musik', 'music', 'pakaian', 'clothing', 'rumah', 'house', 'batik', 'wayang', 'indonesia', 'budaya', 'culture']
+            matches = sum(1 for term in specific_terms if term in title_desc)
+            confidence_score = min(0.9, max(0.3, matches * 0.15))
+            logger.info(f"Fallback video validation confidence: {confidence_score}")
+            return confidence_score
 
     def search_wikimedia_commons(self, query: str, max_results: int = 5) -> List[str]:
         
@@ -298,77 +400,145 @@ class ScrapeService(BaseLangChainService):
 
     def scrape_validated_cultural_media(self) -> Dict[str, Any]:
         province = random.choice(self.provinces)
-        cultural_category = random.choice(self.cultural_categories)
+        media_type = self.choose_media_type()
         
-        logger.info(f"Starting pipeline for {cultural_category} from {province}")
+        if media_type == "video":
+            cultural_category = random.choice(self.video_cultural_categories)
+        else: 
+            cultural_category = random.choice(self.cultural_categories)
+        
+        logger.info(f"Starting pipeline for {cultural_category} from {province} (media type: {media_type})")
         
         try:
             query = self.generate_cultural_query(province, cultural_category)
             
-            file_urls = self.search_wikimedia_commons(query, max_results=3)
-            
-            if not file_urls:
-                logger.warning(f"No files found for query: {query}")
-                return {
-                    "province": province,
-                    "cultural_category": cultural_category,
-                    "query": query,
-                    "status": "no_results",
-                    "image_url": None,
-                    "local_path": None,
-                    "confidence_score": 0.0
-                }
-            
-            for file_url in file_urls:
-                logger.info(f"Processing file: {file_url}")
-                
-                image_url = self.extract_image_from_file_page(file_url)
-                if not image_url:
-                    continue
-                
-                local_path = self.download_image(image_url, province, query)
-                if not local_path:
-                    continue
-                
-                confidence_score = self.validate_cultural_accuracy(province, cultural_category, query)
-                
-                result = {
-                    "province": province,
-                    "cultural_category": cultural_category,
-                    "query": query,
-                    "status": "success",
-                    "file_page_url": file_url,
-                    "image_url": image_url,
-                    "local_path": local_path,
-                    "confidence_score": confidence_score,
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                logger.info(f"Pipeline completed for {province}: confidence {confidence_score}")
-                return result
-            
-            return {
-                "province": province,
-                "cultural_category": cultural_category,
-                "query": query,
-                "status": "processing_failed",
-                "image_url": None,
-                "local_path": None,
-                "confidence_score": 0.0
-            }
+            if media_type == "image":
+                return self._scrape_image_media(province, cultural_category, query)
+            else:  
+                return self._scrape_video_media(province, cultural_category, query)
             
         except Exception as e:
             logger.error(f"Error in scraping pipeline: {e}")
             return {
                 "province": province,
                 "cultural_category": cultural_category,
+                "media_type": media_type,
                 "query": query if 'query' in locals() else None,
                 "status": "error",
                 "error": str(e),
-                "image_url": None,
+                "media_url": None,
                 "local_path": None,
                 "confidence_score": 0.0
             }
+
+    def _scrape_image_media(self, province: str, cultural_category: str, query: str) -> Dict[str, Any]:
+        file_urls = self.search_wikimedia_commons(query, max_results=3)
+        
+        if not file_urls:
+            logger.warning(f"No image files found for query: {query}")
+            return {
+                "province": province,
+                "cultural_category": cultural_category,
+                "media_type": "image",
+                "query": query,
+                "status": "no_results",
+                "media_url": None,
+                "local_path": None,
+                "confidence_score": 0.0
+            }
+        
+        for file_url in file_urls:
+            logger.info(f"Processing image file: {file_url}")
+            
+            image_url = self.extract_image_from_file_page(file_url)
+            if not image_url:
+                continue
+            
+            local_path = self.download_image(image_url, province, query)
+            if not local_path:
+                continue
+            
+            confidence_score = self.validate_cultural_accuracy(province, cultural_category, query)
+            
+            result = {
+                "province": province,
+                "cultural_category": cultural_category,
+                "media_type": "image",
+                "query": query,
+                "status": "success",
+                "file_page_url": file_url,
+                "media_url": image_url,
+                "local_path": local_path,
+                "confidence_score": confidence_score,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            logger.info(f"Image pipeline completed for {province}: confidence {confidence_score}")
+            return result
+        
+        return {
+            "province": province,
+            "cultural_category": cultural_category,
+            "media_type": "image",
+            "query": query,
+            "status": "processing_failed",
+            "media_url": None,
+            "local_path": None,
+            "confidence_score": 0.0
+        }
+
+    def _scrape_video_media(self, province: str, cultural_category: str, query: str) -> Dict[str, Any]:
+        videos = self.search_youtube_videos(query, max_results=3)
+        
+        if not videos:
+            logger.warning(f"No videos found for query: {query}")
+            return {
+                "province": province,
+                "cultural_category": cultural_category,
+                "media_type": "video",
+                "query": query,
+                "status": "no_results",
+                "media_url": None,
+                "local_path": None,
+                "confidence_score": 0.0
+            }
+        
+        for video in videos:
+            logger.info(f"Processing video: {video['title']}")
+            
+            confidence_score = self.validate_video_cultural_accuracy(video, province, cultural_category, query)
+            
+            result = {
+                "province": province,
+                "cultural_category": cultural_category,
+                "media_type": "video",
+                "query": query,
+                "status": "success",
+                "video_id": video['video_id'],
+                "media_url": video['video_url'],
+                "title": video['title'],
+                "description": video['description'],
+                "channel_title": video['channel_title'],
+                "thumbnail_url": video['thumbnail_url'],
+                "published_at": video['published_at'],
+                "local_path": None,
+                "confidence_score": confidence_score,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            logger.info(f"Video pipeline completed for {province}: confidence {confidence_score}")
+            return result
+        
+        return {
+            "province": province,
+            "cultural_category": cultural_category,
+            "media_type": "video",
+            "query": query,
+            "status": "processing_failed",
+            "media_url": None,
+            "local_path": None,
+            "confidence_score": 0.0
+        }
 
     def scrape_until_valid(self, max_attempts: int = 10) -> Dict[str, Union[str, float]]:
         for attempt in range(1, max_attempts + 1):
@@ -378,23 +548,29 @@ class ScrapeService(BaseLangChainService):
                 result = self.scrape_validated_cultural_media()
                 
                 confidence_score = result.get("confidence_score", 0.0)
-                has_image = result.get("image_url") is not None
-                has_local_path = result.get("local_path") is not None
+                has_media = result.get("media_url") is not None
+                media_type = result.get("media_type", "unknown")
                 is_valid = confidence_score >= 0.85
                 
-                if is_valid and has_image and has_local_path:
-                    logger.info(f"Found valid image on attempt {attempt}: {result['province']} (confidence: {confidence_score})")
+                if is_valid and has_media:
+                    logger.info(f"Found valid {media_type} on attempt {attempt}: {result['province']} (confidence: {confidence_score})")
                     
-                    self.cleanup_local_file(result["local_path"])
+                    if result.get("local_path"):
+                        self.cleanup_local_file(result["local_path"])
                     
-                    return {
+                    return_data = {
                         "province": result["province"],
-                        "image_url": result["image_url"],
-                        "confidence_score": confidence_score
+                        "media_type": media_type,
+                        "media_url": result["media_url"],
+                        "confidence_score": confidence_score,
+                        "cultural_category": result["cultural_category"],
+                        "query": result["query"]
                     }
+                    
+                    return return_data
                 else:
-                    logger.warning(f"Attempt {attempt} failed - Confidence: {confidence_score} (need ≥0.85), Has image: {has_image}")
-                    if has_local_path:
+                    logger.warning(f"Attempt {attempt} failed - Confidence: {confidence_score} (need ≥0.85), Has media: {has_media}, Media type: {media_type}")
+                    if result.get("local_path"):
                         self.cleanup_local_file(result["local_path"])
                     
                     time.sleep(1)
@@ -405,6 +581,6 @@ class ScrapeService(BaseLangChainService):
                 time.sleep(1)
                 continue
         
-        logger.error(f"Failed to get valid image after {max_attempts} attempts")
-        raise Exception(f"Could not find valid cultural image after {max_attempts} attempts")
+        logger.error(f"Failed to get valid media after {max_attempts} attempts")
+        raise Exception(f"Could not find valid cultural media after {max_attempts} attempts")
 
