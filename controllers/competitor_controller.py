@@ -1,4 +1,28 @@
-from fastapi import APIRouter
-from services.competitor_service import CompetitorService
+from services.cultural_media_location_service import CulturalMediaLocationService
+from routers.game_router import challenge_manager
 
-competitor_router = APIRouter()
+media_service = CulturalMediaLocationService()
+
+async def handle_guess(media_url: str, user_guess: str, actual_province: str):
+    ai_result = await challenge_manager.media_service.predict_province_from_input(
+        media_url=media_url,
+        difficulty=challenge_manager._map_threshold_to_difficulty(),
+        use_chain_of_thought=True
+    )
+
+    user_correct = user_guess.lower() == actual_province.lower()
+    ai_correct = ai_result.province_guess.lower() == actual_province.lower()
+
+    challenge_manager.update_difficulty(ai_correct)
+
+    return {
+        "actual_province": actual_province,
+        "user_guess": user_guess,
+        "ai_guess": ai_result.province_guess,
+        "ai_confidence": ai_result.confidence,
+        "user_correct": user_correct,
+        "ai_correct": ai_correct,
+        "current_difficulty": challenge_manager.get_current_difficulty(),
+        "ai_reasoning": ai_result.reasoning,
+        "error": ai_result.error
+    }
