@@ -9,6 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 import os
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,6 @@ class ScrapeService(BaseLangChainService):
             response = self.text_llm.invoke([HumanMessage(content=validation_prompt)])
             response_text = response.content.strip()
             
-            import re
             score_match = re.search(r'(\d+\.?\d*)', response_text)
             if score_match:
                 confidence_score = float(score_match.group(1))
@@ -172,7 +172,6 @@ class ScrapeService(BaseLangChainService):
                 for element in soup.find_all(['span', 'div', 'a'], string=lambda text: text and 'File:' in text):
                     text = element.get_text() if hasattr(element, 'get_text') else str(element)
                     if 'File:' in text:
-                        import re
                         file_matches = re.findall(r'File:[^,\s\]]+\.(?:jpg|jpeg|png|webp|gif)', text, re.IGNORECASE)
                         for match in file_matches:
                             file_url = f"https://commons.wikimedia.org/wiki/{match.replace(' ', '_')}"
@@ -234,7 +233,6 @@ class ScrapeService(BaseLangChainService):
                     '/thumb/' in src and
                     any(ext in src.lower() for ext in image_extensions)):
                     
-                    import re
                     size_match = re.search(r'(\d+)px-', src)
                     if size_match:
                         size = int(size_match.group(1))
@@ -322,79 +320,83 @@ class ScrapeService(BaseLangChainService):
             logger.error(f"Error cleaning up file {local_path}: {e}")
             return False
 
-    def extract_cultural_context_from_video(self, video_data: Dict[str, Any], query: str) -> str:
+    def generate_fun_fact_from_video(self, video_data: Dict[str, Any], query: str) -> str:
         try:
             title = video_data.get('title', '')
             description = video_data.get('description', '')[:500] 
             
-            extraction_prompt = f"""Extract the most specific cultural element name from this video information.
+            extraction_prompt = f"""You are a cultural expert helping people learn about Indonesian heritage in a fun and engaging way.
 
-                        Video Title: {title}
-                        Video Description: {description}
-                        Search Query: {query}
+                Based on the following video information, write a **short, fun, and informative fact** about the most prominent cultural element mentioned or a general one based on the query if no specific element is found. 
+                The fact should be written in 1–3 sentences, easy to read, and spark curiosity.
 
-                        Please identify and return ONLY the most specific cultural element name (e.g., "Tari Kecak", "Gamelan Jawa", "Batik Jogja", "Wayang Kulit").
+                Video Title: {title}
+                Video Description: {description}
+                Search Query: {query}
 
-                        Rules:
-                        1. Return the cultural element in its traditional Indonesian name if possible
-                        2. Include the specific type/style if mentioned (e.g., "Tari Kecak" not just "dance")
-                        3. If multiple elements are mentioned, choose the most prominent one
-                        4. If no specific element can be identified, return the search query
-                        5. Return ONLY the cultural element name, nothing else
+                Rules:
+                1. If a specific cultural element (like "Tari Kecak", "Batik Jogja", "Wayang Kulit") is mentioned, write the fun fact about that.
+                2. If no specific cultural element is found, write a fun fact related to the broader cultural context of the query (e.g. the province or cultural category).
+                3. The fun fact must be written **without any intro or disclaimer** — do not say "since there is no specific element..." or anything like that.
+                4. The tone should be lively and curious, like trivia — not a formal explanation.
+                5. Keep it short and easy to read, max 3 sentences.
 
-                        Examples:
-                        - "Traditional Balinese Kecak Dance Performance" → "Tari Kecak"
-                        - "Javanese Gamelan Music Concert" → "Gamelan Jawa"
-                        - "Wayang Kulit Shadow Puppet Show" → "Wayang Kulit"
-                        """
-            
+                Examples:
+                - Good: "Tari Kecak is a Balinese dance where men chant in hypnotic rhythm — no instruments needed!"
+                - Good: "North Sumatra is home to the Batak people, known for their powerful vocal music and traditional houses."
+                - Bad: "Since the video is about a cultural festival, here's a general fact: ..."
+
+                Now write the short fun fact:
+                """
+
             response = self.text_llm.invoke([HumanMessage(content=extraction_prompt)])
-            cultural_context = response.content.strip().replace('"', '').replace("'", "")
+            fun_fact = response.content.strip().replace('"', '').replace("'", "")
             
-            logger.info(f"Extracted cultural context from video: {cultural_context}")
-            return cultural_context if cultural_context else query
+            logger.info(f"Generated cultural fun fact: {fun_fact}")
+            return fun_fact if fun_fact else query
             
         except Exception as e:
-            logger.error(f"Error extracting cultural context from video: {e}")
+            logger.error(f"Error generating cultural fun fact from video: {e}")
             return query
 
-    def extract_cultural_context_from_image(self, file_page_url: str, query: str) -> str:
+    def generate_fun_fact_from_image(self, file_page_url: str, query: str) -> str:
         try:
-            import re
             filename_match = re.search(r'/wiki/File:([^/]+)', file_page_url)
             filename = filename_match.group(1) if filename_match else ""
             
             filename = urllib.parse.unquote(filename)
             filename = filename.replace('_', ' ').replace('-', ' ')
             
-            extraction_prompt = f"""Extract the most specific cultural element name from this Wikimedia Commons filename.
+            extraction_prompt = f"""You are a cultural expert helping people learn about Indonesian heritage.
 
-                    Filename: {filename}
-                    Search Query: {query}
+                Based on the following Wikimedia Commons image filename and search query, write a short, fun, and educational fact about the most prominent cultural element mentioned.
 
-                    Please identify and return ONLY the most specific cultural element name (e.g., "Tari Kecak", "Gamelan Jawa", "Batik Jogja", "Rumah Gadang").
+                Filename: {filename}
+                Search Query: {query}
 
-                    Rules:
-                    1. Return the cultural element in its traditional Indonesian name if possible
-                    2. Include the specific type/style if mentioned
-                    3. Remove file extensions and technical terms
-                    4. If filename doesn't contain specific cultural info, return the search query
-                    5. Return ONLY the cultural element name, nothing else
+                Instructions:
+                1. Identify the cultural element (e.g., Tari Kecak, Gamelan Jawa, Batik Jogja, Rumah Gadang).
+                2. Write a fun fact about it in a friendly, concise tone — ideally 1–3 sentences.
+                3. Mention something interesting, like its origin, uniqueness, or when it’s used.
+                4. Use the traditional Indonesian name in your output.
+                5. If filename lacks clear cultural info, use the search query to guess a likely element and still generate a fact.
+                6. Do NOT return just the name — write a fun fact, not a label.
 
-                    Examples:
-                    - "Tari_Kecak_performance.jpg" → "Tari Kecak"
-                    - "Batik_Jogja_traditional_pattern.png" → "Batik Jogja"
-                    - "Rumah_Gadang_Minangkabau.jpg" → "Rumah Gadang"
-                    """
-            
+                Examples:
+                - Filename: Tari_Kecak_performance.jpg → "Tari Kecak is a powerful Balinese dance where dozens of men chant 'cak cak cak' in unison — no instruments needed!"
+                - Filename: Batik_Jogja_traditional_pattern.png → "Batik Jogja is known for its symmetrical motifs and deep philosophy rooted in Javanese royalty."
+
+                Now write the short cultural fun fact:
+                """
+
             response = self.text_llm.invoke([HumanMessage(content=extraction_prompt)])
-            cultural_context = response.content.strip().replace('"', '').replace("'", "")
-            
-            logger.info(f"Extracted cultural context from image filename: {cultural_context}")
-            return cultural_context if cultural_context else query
-            
+            fun_fact = response.content.strip().replace('"', '').replace("'", "")
+
+            logger.info(f"Generated cultural fun fact from image: {fun_fact}")
+            return fun_fact if fun_fact else query
+
         except Exception as e:
-            logger.error(f"Error extracting cultural context from image: {e}")
+            logger.error(f"Error generating cultural fun fact from image: {e}")
             return query
 
     def validate_cultural_accuracy(self, province: str, cultural_category: str, query: str) -> float:
@@ -416,7 +418,6 @@ class ScrapeService(BaseLangChainService):
             response = self.text_llm.invoke([HumanMessage(content=validation_prompt)])
             response_text = response.content.strip()
             
-            import re
             score_match = re.search(r'(\d+\.?\d*)', response_text)
             if score_match:
                 confidence_score = float(score_match.group(1))
@@ -499,7 +500,7 @@ class ScrapeService(BaseLangChainService):
                 continue
             
             confidence_score = self.validate_cultural_accuracy(province, cultural_category, query)
-            cultural_context = self.extract_cultural_context_from_image(file_url, query)
+            cultural_fun_fact = self.generate_fun_fact_from_image(file_url, query)
             
             result = {
                 "province": province,
@@ -511,10 +512,10 @@ class ScrapeService(BaseLangChainService):
                 "media_url": image_url,
                 "local_path": local_path,
                 "confidence_score": confidence_score,
-                "cultural_context": cultural_context,
+                "cultural_fun_fact": cultural_fun_fact,
             }
             
-            logger.info(f"Image pipeline completed for {province}: confidence {confidence_score}, context: {cultural_context}")
+            logger.info(f"Image pipeline completed for {province}: confidence {confidence_score}, context: {cultural_fun_fact}")
             return result
         
         return {
@@ -548,7 +549,7 @@ class ScrapeService(BaseLangChainService):
             logger.info(f"Processing video: {video['title']}")
             
             confidence_score = self.validate_video_cultural_accuracy(video, province, cultural_category, query)
-            cultural_context = self.extract_cultural_context_from_video(video, query)
+            cultural_fun_fact = self.generate_fun_fact_from_video(video, query)
             
             result = {
                 "province": province,
@@ -565,10 +566,10 @@ class ScrapeService(BaseLangChainService):
                 "published_at": video['published_at'],
                 "local_path": None,
                 "confidence_score": confidence_score,
-                "cultural_context": cultural_context,
+                "cultural_fun_fact": cultural_fun_fact,
             }
             
-            logger.info(f"Video pipeline completed for {province}: confidence {confidence_score}, context: {cultural_context}")
+            logger.info(f"Video pipeline completed for {province}: confidence {confidence_score}, context: {cultural_fun_fact}")
             return result
         
         return {
@@ -606,7 +607,7 @@ class ScrapeService(BaseLangChainService):
                         "media_url": result["media_url"],
                         "cultural_category": result["cultural_category"],
                         "query": result["query"],
-                        "cultural_context": result.get("cultural_context", result["query"])
+                        "cultural_fun_fact": result.get("cultural_fun_fact", result["query"])
                     }
                     
                     return return_data
