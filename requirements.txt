@@ -1,11 +1,40 @@
+# Web framework
 fastapi
-uvicorn
-pydantic
+uvicorn[standard]
+python-multipart
+
+# Environment variables
+python-dotenv
+
+# Google Gemini API with LangChain
+langchain
+langchain-core
 langchain-google-genai
 google-generativeai
-langchain
-requests
-beautifulsoup4
-pydantic
-python-dotenv
 google-api-python-client
+
+# Utilities
+requests
+pydantic
+typing-inspect
+typing-extensions
+psutil
+
+# Authentication
+firebase-admin
+
+# Development tools
+pytest
+pytest-cov
+pytest-asyncio
+black
+flake8
+httpx
+
+# Web scraping
+beautifulsoup4
+selenium
+webdriver-manager
+
+# Database
+supabase
