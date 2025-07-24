@@ -357,6 +357,81 @@ class ScrapeService(BaseLangChainService):
             logger.error(f"Error cleaning up file {local_path}: {e}")
             return False
 
+    def extract_cultural_context_from_video(self, video_data: Dict[str, Any], query: str) -> str:
+        try:
+            title = video_data.get('title', '')
+            description = video_data.get('description', '')[:500] 
+            
+            extraction_prompt = f"""Extract the most specific cultural element name from this video information.
+
+                        Video Title: {title}
+                        Video Description: {description}
+                        Search Query: {query}
+
+                        Please identify and return ONLY the most specific cultural element name (e.g., "Tari Kecak", "Gamelan Jawa", "Batik Jogja", "Wayang Kulit").
+
+                        Rules:
+                        1. Return the cultural element in its traditional Indonesian name if possible
+                        2. Include the specific type/style if mentioned (e.g., "Tari Kecak" not just "dance")
+                        3. If multiple elements are mentioned, choose the most prominent one
+                        4. If no specific element can be identified, return the search query
+                        5. Return ONLY the cultural element name, nothing else
+
+                        Examples:
+                        - "Traditional Balinese Kecak Dance Performance" → "Tari Kecak"
+                        - "Javanese Gamelan Music Concert" → "Gamelan Jawa"
+                        - "Wayang Kulit Shadow Puppet Show" → "Wayang Kulit"
+                        """
+            
+            response = self.text_llm.invoke([HumanMessage(content=extraction_prompt)])
+            cultural_context = response.content.strip().replace('"', '').replace("'", "")
+            
+            logger.info(f"Extracted cultural context from video: {cultural_context}")
+            return cultural_context if cultural_context else query
+            
+        except Exception as e:
+            logger.error(f"Error extracting cultural context from video: {e}")
+            return query
+
+    def extract_cultural_context_from_image(self, file_page_url: str, query: str) -> str:
+        try:
+            import re
+            filename_match = re.search(r'/wiki/File:([^/]+)', file_page_url)
+            filename = filename_match.group(1) if filename_match else ""
+            
+            filename = urllib.parse.unquote(filename)
+            filename = filename.replace('_', ' ').replace('-', ' ')
+            
+            extraction_prompt = f"""Extract the most specific cultural element name from this Wikimedia Commons filename.
+
+                    Filename: {filename}
+                    Search Query: {query}
+
+                    Please identify and return ONLY the most specific cultural element name (e.g., "Tari Kecak", "Gamelan Jawa", "Batik Jogja", "Rumah Gadang").
+
+                    Rules:
+                    1. Return the cultural element in its traditional Indonesian name if possible
+                    2. Include the specific type/style if mentioned
+                    3. Remove file extensions and technical terms
+                    4. If filename doesn't contain specific cultural info, return the search query
+                    5. Return ONLY the cultural element name, nothing else
+
+                    Examples:
+                    - "Tari_Kecak_performance.jpg" → "Tari Kecak"
+                    - "Batik_Jogja_traditional_pattern.png" → "Batik Jogja"
+                    - "Rumah_Gadang_Minangkabau.jpg" → "Rumah Gadang"
+                    """
+            
+            response = self.text_llm.invoke([HumanMessage(content=extraction_prompt)])
+            cultural_context = response.content.strip().replace('"', '').replace("'", "")
+            
+            logger.info(f"Extracted cultural context from image filename: {cultural_context}")
+            return cultural_context if cultural_context else query
+            
+        except Exception as e:
+            logger.error(f"Error extracting cultural context from image: {e}")
+            return query
+
     def validate_cultural_accuracy(self, province: str, cultural_category: str, query: str) -> float:
         
         try:
@@ -459,6 +534,7 @@ class ScrapeService(BaseLangChainService):
                 continue
             
             confidence_score = self.validate_cultural_accuracy(province, cultural_category, query)
+            cultural_context = self.extract_cultural_context_from_image(file_url, query)
             
             result = {
                 "province": province,
@@ -470,10 +546,10 @@ class ScrapeService(BaseLangChainService):
                 "media_url": image_url,
                 "local_path": local_path,
                 "confidence_score": confidence_score,
-                "timestamp": datetime.now().isoformat()
+                "cultural_context": cultural_context,
             }
             
-            logger.info(f"Image pipeline completed for {province}: confidence {confidence_score}")
+            logger.info(f"Image pipeline completed for {province}: confidence {confidence_score}, context: {cultural_context}")
             return result
         
         return {
@@ -507,6 +583,7 @@ class ScrapeService(BaseLangChainService):
             logger.info(f"Processing video: {video['title']}")
             
             confidence_score = self.validate_video_cultural_accuracy(video, province, cultural_category, query)
+            cultural_context = self.extract_cultural_context_from_video(video, query)
             
             result = {
                 "province": province,
@@ -523,10 +600,10 @@ class ScrapeService(BaseLangChainService):
                 "published_at": video['published_at'],
                 "local_path": None,
                 "confidence_score": confidence_score,
-                "timestamp": datetime.now().isoformat()
+                "cultural_context": cultural_context,
             }
             
-            logger.info(f"Video pipeline completed for {province}: confidence {confidence_score}")
+            logger.info(f"Video pipeline completed for {province}: confidence {confidence_score}, context: {cultural_context}")
             return result
         
         return {
@@ -562,9 +639,9 @@ class ScrapeService(BaseLangChainService):
                         "province": result["province"],
                         "media_type": media_type,
                         "media_url": result["media_url"],
-                        "confidence_score": confidence_score,
                         "cultural_category": result["cultural_category"],
-                        "query": result["query"]
+                        "query": result["query"],
+                        "cultural_context": result.get("cultural_context", result["query"])
                     }
                     
                     return return_data
