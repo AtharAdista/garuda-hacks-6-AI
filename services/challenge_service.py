@@ -8,7 +8,7 @@ class ChallengeService:
 
     async def get_ai_guess_for_media(self, media_url: str) -> dict:
         """Let AI guess based on the given media URL and current difficulty level."""
-        difficulty = self._map_threshold_to_difficulty()
+        difficulty = self.map_threshold_to_difficulty()
 
         result: LocationGuessResult = await self.media_service.predict_province_from_input(
             media_url=media_url,
