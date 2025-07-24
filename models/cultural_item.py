@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 from typing import List, Literal
 
 class CulturalItem(BaseModel):
@@ -14,6 +15,6 @@ class ChatTurn(BaseModel):
     message: str
 
 class ChatRequest(BaseModel):
-    cultural_item: CulturalItem
+    cultural_item: Optional[CulturalItem] = None
     user_message: str
     chat_history: List[ChatTurn] = []

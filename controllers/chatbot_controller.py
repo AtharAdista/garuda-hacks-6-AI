@@ -13,9 +13,3 @@ def chat_with_gemini(request: ChatRequest):
             history=request.chat_history
         )
     }
-
-@chatbot_router.post("/auto-greet")
-def greet_for_page(item: CulturalItem):
-    return {
-        "response": get_chat_response(item)
-    }
