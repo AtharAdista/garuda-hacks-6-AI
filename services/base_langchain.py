@@ -1,9 +1,12 @@
 import os
+from dotenv import load_dotenv
 
 from pydantic import SecretStr
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 import logging
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
