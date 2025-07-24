@@ -1,10 +1,10 @@
 from .base_langchain import BaseLangChainService
+from .youtube_service import YouTubeService
 import logging
 from typing import Dict, List, Any, Optional, Union
 import random
 from langchain.schema import HumanMessage
 import time
-from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 import urllib.parse
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class ScrapeService(BaseLangChainService):
     def __init__(self):
         super().__init__(model_name="models/gemini-2.0-flash")
+        self.youtube_service = YouTubeService()
         logger.info("ScrapeService initialized")
         
         self.download_dir = Path("downloads/cultural_images")
@@ -83,43 +84,7 @@ class ScrapeService(BaseLangChainService):
             return "video"
 
     def search_youtube_videos(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-        try:
-            if not self.youtube_client:
-                logger.error("YouTube client not initialized")
-                return []
-                
-            logger.info(f"Searching YouTube for videos: {query}")
-            
-            search_response = self.youtube_client.search().list(
-                q=query,
-                part='id,snippet',
-                type='video',
-                maxResults=max_results,
-                order='relevance',
-                regionCode='ID', 
-                relevanceLanguage='id' 
-            ).execute()
-            
-            videos = []
-            for search_result in search_response.get('items', []):
-                video_data = {
-                    'video_id': search_result['id']['videoId'],
-                    'title': search_result['snippet']['title'],
-                    'description': search_result['snippet']['description'],
-                    'channel_title': search_result['snippet']['channelTitle'],
-                    'published_at': search_result['snippet']['publishedAt'],
-                    'thumbnail_url': search_result['snippet']['thumbnails']['high']['url'],
-                    'video_url': f"https://www.youtube.com/watch?v={search_result['id']['videoId']}"
-                }
-                videos.append(video_data)
-                logger.info(f"Found video: {video_data['title']}")
-            
-            logger.info(f"Found {len(videos)} videos for query: {query}")
-            return videos
-            
-        except Exception as e:
-            logger.error(f"Error searching YouTube videos: {e}")
-            return []
+        return self.youtube_service.search_videos(query, max_results)
 
     def validate_video_cultural_accuracy(self, video_data: Dict[str, Any], province: str, cultural_category: str, query: str) -> float:
         try:
