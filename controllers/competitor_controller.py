@@ -10,7 +10,6 @@ challenge_service = ChallengeService()
 @competitor_router.post("/guess")
 async def guess_province(
     input_url: str = Form(...),
-    user_guess: str = Form(...),
     actual_province: str = Form(...)
 ):
     # AI Prediction with difficulty
@@ -21,7 +20,6 @@ async def guess_province(
     )
 
     # Evaluation
-    user_correct = user_guess.lower() == actual_province.lower()
     ai_correct = ai_result.province_guess.lower() == actual_province.lower()
 
     # Update difficulty
@@ -29,10 +27,8 @@ async def guess_province(
 
     return {
         "actual_province": actual_province,
-        "user_guess": user_guess,
         "ai_guess": ai_result.province_guess,
         "ai_confidence": ai_result.confidence,
-        "user_correct": user_correct,
         "ai_correct": ai_correct,
         "current_difficulty": challenge_service.get_current_difficulty(),
         "ai_reasoning": ai_result.reasoning,
