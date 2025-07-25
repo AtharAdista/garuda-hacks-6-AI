@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Body
 from services.cultural_media_location_service import CulturalMediaLocationService
 from services.challenge_service import ChallengeService
+from models.guess_request import GuessRequest
 
 competitor_router =  APIRouter(prefix="/game", tags=["Game"])
 
@@ -8,10 +9,10 @@ media_service = CulturalMediaLocationService()
 challenge_service = ChallengeService()
 
 @competitor_router.post("/guess")
-async def guess_province(
-    input_url: str = Form(...),
-    actual_province: str = Form(...)
-):
+async def guess_province(request: GuessRequest = Body(...)):
+    input_url = request.input_url
+    actual_province = request.actual_province
+
     # AI Prediction with difficulty
     ai_result = await media_service.predict_province_from_input(
         media_url=input_url,
