@@ -106,7 +106,7 @@ class ScrapeService(BaseLangChainService):
                 3. Does it match the cultural category "{cultural_category}"?
                 4. Is the content quality and authenticity appropriate?
 
-                Return ONLY a confidence score between 0.0 and 1.0 as a number (e.g., 0.65)."""
+                Return ONLY a confidence score between 0.0 and 1.0 as a number (e.g., 0.75)."""
             
             response = self.text_llm.invoke([HumanMessage(content=validation_prompt)])
             response_text = response.content.strip()
@@ -413,7 +413,7 @@ class ScrapeService(BaseLangChainService):
                     2. Is it specifically related to {province} province?
                     3. Does it match the cultural category "{cultural_category}"?
 
-                    Return ONLY a confidence score between 0.0 and 1.0 as a number (e.g., 0.65)."""
+                    Return ONLY a confidence score between 0.0 and 1.0 as a number (e.g., 0.75)."""
             
             response = self.text_llm.invoke([HumanMessage(content=validation_prompt)])
             response_text = response.content.strip()
@@ -435,7 +435,7 @@ class ScrapeService(BaseLangChainService):
             logger.error(f"Error in cultural validation: {e}")
             specific_terms = ['tari', 'dance', 'musik', 'music', 'pakaian', 'clothing', 'rumah', 'house', 'batik', 'wayang']
             is_specific = any(term in query.lower() for term in specific_terms)
-            confidence_score = 0.65 if is_specific else 0.4
+            confidence_score = 0.75 if is_specific else 0.4
             logger.info(f"Fallback validation confidence for {province}: {confidence_score}")
             return confidence_score
 
@@ -593,7 +593,7 @@ class ScrapeService(BaseLangChainService):
                 confidence_score = result.get("confidence_score", 0.0)
                 has_media = result.get("media_url") is not None
                 media_type = result.get("media_type", "unknown")
-                is_valid = confidence_score >= 0.65
+                is_valid = confidence_score >= 0.75
                 
                 if is_valid and has_media:
                     logger.info(f"Found valid {media_type} on attempt {attempt}: {result['province']} (confidence: {confidence_score})")
@@ -612,7 +612,7 @@ class ScrapeService(BaseLangChainService):
                     
                     return return_data
                 else:
-                    logger.warning(f"Attempt {attempt} failed - Confidence: {confidence_score} (need ≥0.65), Has media: {has_media}, Media type: {media_type}")
+                    logger.warning(f"Attempt {attempt} failed - Confidence: {confidence_score} (need ≥0.75), Has media: {has_media}, Media type: {media_type}")
                     if result.get("local_path"):
                         self.cleanup_local_file(result["local_path"])
                     
