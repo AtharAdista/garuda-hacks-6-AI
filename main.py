@@ -5,6 +5,7 @@ from controllers.scrape_controller import scrape_router
 from controllers.competitor_controller import competitor_router
 from controllers.game_controller import game_router
 from controllers.chatbot_controller import chatbot_router
+from controllers.match_summary_controller import match_summary_router
 import uvicorn
 
 app = FastAPI(
@@ -24,6 +25,7 @@ app.include_router(scrape_router)
 app.include_router(competitor_router)
 app.include_router(game_router)
 app.include_router(chatbot_router)
+app.include_router(match_summary_router)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
